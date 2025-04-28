@@ -1,10 +1,10 @@
 [package]
 name = "flac-rs"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 authors = ["0xAA55 <838816058@qq.com>"]
 license-file = "LICENSE"
-description = "A rust wrap for libflac-sys"
+description = "A rust wrap for libflac-sys for both encoding and decoding and metadata"
 repository = "https://github.com/0xAA55-rs/flac-rs"
 keywords = ["audio", "FLAC", "lossless"]
 
