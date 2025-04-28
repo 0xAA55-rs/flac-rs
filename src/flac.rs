@@ -784,7 +784,7 @@ impl Drop for FlacMetadata {
 
 /// ## The encoder's core structure, but can't move after `initialize()` has been called.
 /// Use a `Box` to contain it, or just don't move it will be fine.
-pub struct FlacEncoderUnmovable<WriteSeek>
+pub struct FlacEncoderUnmovable<'a, WriteSeek>
 where
     WriteSeek: Write + Seek + Debug {
     /// * See: <https://xiph.org/flac/api/group__flac__stream__encoder.html>
@@ -804,13 +804,13 @@ where
 
     /// * Your `on_write()` closure, to receive the encoded FLAC file pieces.
     /// * Instead of just writing the data to the `writer`, you can do what you want to do to the data, and return a proper `Result`.
-    on_write: Box<dyn FnMut(&mut WriteSeek, &[u8]) -> Result<(), io::Error>>,
+    on_write: Box<dyn FnMut(&mut WriteSeek, &[u8]) -> Result<(), io::Error> + 'a>,
 
     /// * Your `on_seek()` closure. Often works by calling `writer.seek()` to help your encoder to move the file pointer.
-    on_seek: Box<dyn FnMut(&mut WriteSeek, u64) -> Result<(), io::Error>>,
+    on_seek: Box<dyn FnMut(&mut WriteSeek, u64) -> Result<(), io::Error> + 'a>,
 
     /// * Your `on_tell()` closure. Often works by calling `writer.stream_position()` to help your encoder to know the current write position.
-    on_tell: Box<dyn FnMut(&mut WriteSeek) -> Result<u64, io::Error>>,
+    on_tell: Box<dyn FnMut(&mut WriteSeek) -> Result<u64, io::Error> + 'a>,
 
     /// * The metadata to be added to the FLAC file. You can only add the metadata before calling `initialize()`
     comments: BTreeMap<&'static str, String>,
@@ -825,14 +825,14 @@ where
     finished: bool,
 }
 
-impl<WriteSeek> FlacEncoderUnmovable<WriteSeek>
+impl<'a, WriteSeek> FlacEncoderUnmovable<'a, WriteSeek>
 where
     WriteSeek: Write + Seek + Debug {
     pub fn new(
         writer: WriteSeek,
-        on_write: Box<dyn FnMut(&mut WriteSeek, &[u8]) -> Result<(), io::Error>>,
-        on_seek: Box<dyn FnMut(&mut WriteSeek, u64) -> Result<(), io::Error>>,
-        on_tell: Box<dyn FnMut(&mut WriteSeek) -> Result<u64, io::Error>>,
+        on_write: Box<dyn FnMut(&mut WriteSeek, &[u8]) -> Result<(), io::Error> + 'a>,
+        on_seek: Box<dyn FnMut(&mut WriteSeek, u64) -> Result<(), io::Error> + 'a>,
+        on_tell: Box<dyn FnMut(&mut WriteSeek) -> Result<u64, io::Error> + 'a>,
         params: &FlacEncoderParams
     ) -> Result<Self, FlacEncoderError> {
         let ret = Self {
@@ -1218,7 +1218,7 @@ where
     pub fn finalize(self) {}
 }
 
-impl<WriteSeek> Debug for FlacEncoderUnmovable<WriteSeek>
+impl<'a, WriteSeek> Debug for FlacEncoderUnmovable<'_, WriteSeek>
 where
     WriteSeek: Write + Seek + Debug {
     fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
@@ -1237,7 +1237,7 @@ where
     }
 }
 
-impl<WriteSeek> Drop for FlacEncoderUnmovable<WriteSeek>
+impl<'a, WriteSeek> Drop for FlacEncoderUnmovable<'_, WriteSeek>
 where
     WriteSeek: Write + Seek + Debug {
     fn drop(&mut self) {
@@ -1247,20 +1247,20 @@ where
 
 /// ## A wrapper for `FlacEncoderUnmovable`, which provides a Box to make `FlacEncoderUnmovable` never move.
 /// This is the struct that should be mainly used by you.
-pub struct FlacEncoder<WriteSeek>
+pub struct FlacEncoder<'a, WriteSeek>
 where
     WriteSeek: Write + Seek + Debug {
-    encoder: Box<FlacEncoderUnmovable<WriteSeek>>,
+    encoder: Box<FlacEncoderUnmovable<'a, WriteSeek>>,
 }
 
-impl<WriteSeek> FlacEncoder<WriteSeek>
+impl<'a, WriteSeek> FlacEncoder<'a, WriteSeek>
 where
     WriteSeek: Write + Seek + Debug {
     pub fn new(
         writer: WriteSeek,
-        on_write: Box<dyn FnMut(&mut WriteSeek, &[u8]) -> Result<(), io::Error>>,
-        on_seek: Box<dyn FnMut(&mut WriteSeek, u64) -> Result<(), io::Error>>,
-        on_tell: Box<dyn FnMut(&mut WriteSeek) -> Result<u64, io::Error>>,
+        on_write: Box<dyn FnMut(&mut WriteSeek, &[u8]) -> Result<(), io::Error> + 'a>,
+        on_seek: Box<dyn FnMut(&mut WriteSeek, u64) -> Result<(), io::Error> + 'a>,
+        on_tell: Box<dyn FnMut(&mut WriteSeek) -> Result<u64, io::Error> + 'a>,
         params: &FlacEncoderParams
     ) -> Result<Self, FlacEncoderError> {
         Ok(Self {
@@ -1347,7 +1347,7 @@ where
     pub fn finalize(self) {}
 }
 
-impl<WriteSeek> Debug for FlacEncoder<WriteSeek>
+impl<'a, WriteSeek> Debug for FlacEncoder<'_, WriteSeek>
 where
     WriteSeek: Write + Seek + Debug {
     fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
@@ -1639,7 +1639,7 @@ pub struct SamplesInfo {
     pub audio_form: FlacAudioForm,
 }
 
-fn entry_to_str(entry: &FLAC__StreamMetadata_VorbisComment_Entry) -> Cow<str> {
+fn entry_to_str(entry: &FLAC__StreamMetadata_VorbisComment_Entry) -> Cow<'_, str> {
     unsafe{String::from_utf8_lossy(slice::from_raw_parts(entry.entry, entry.length as usize))}
 }
 
@@ -1649,7 +1649,7 @@ fn entry_to_string(entry: &FLAC__StreamMetadata_VorbisComment_Entry) -> String {
 
 /// ## The decoder's core structure, but can't move after `initialize()` has been called.
 /// Use a `Box` to contain it, or just don't move it will be fine.
-pub struct FlacDecoderUnmovable<ReadSeek>
+pub struct FlacDecoderUnmovable<'a, ReadSeek>
 where
     ReadSeek: Read + Seek + Debug {
     /// * See <https://xiph.org/flac/api/group__flac__stream__decoder.html>
@@ -1659,25 +1659,25 @@ where
     reader: ReadSeek,
 
     /// * Your `on_read()` closure, read from the `reader` and return how many bytes you read, and what is the current read status.
-    on_read: Box<dyn FnMut(&mut ReadSeek, &mut [u8]) -> (usize, FlacReadStatus)>,
+    on_read: Box<dyn FnMut(&mut ReadSeek, &mut [u8]) -> (usize, FlacReadStatus) + 'a>,
 
     /// * Your `on_seek()` closure, helps the decoder to set the file pointer.
-    on_seek: Box<dyn FnMut(&mut ReadSeek, u64) -> Result<(), io::Error>>,
+    on_seek: Box<dyn FnMut(&mut ReadSeek, u64) -> Result<(), io::Error> + 'a>,
 
     /// * Your `on_tell()` closure, returns the current read position.
-    on_tell: Box<dyn FnMut(&mut ReadSeek) -> Result<u64, io::Error>>,
+    on_tell: Box<dyn FnMut(&mut ReadSeek) -> Result<u64, io::Error> + 'a>,
 
     /// * Your `on_length()` closure. You only need to return the file length through this closure.
-    on_length: Box<dyn FnMut(&mut ReadSeek) -> Result<u64, io::Error>>,
+    on_length: Box<dyn FnMut(&mut ReadSeek) -> Result<u64, io::Error> + 'a>,
 
     /// * Your `on_eof()` closure, if the `reader` hits the end of the file, the closure returns true. Otherwise returns false indicates that there's still data to be read by the decoder.
-    on_eof: Box<dyn FnMut(&mut ReadSeek) -> bool>,
+    on_eof: Box<dyn FnMut(&mut ReadSeek) -> bool + 'a>,
 
     /// * Your `on_write()` closure, it's not for you to "write", but it's the decoder returns the decoded samples for you to use.
-    on_write: Box<dyn FnMut(&[Vec<i32>], &SamplesInfo) -> Result<(), io::Error>>,
+    on_write: Box<dyn FnMut(&[Vec<i32>], &SamplesInfo) -> Result<(), io::Error> + 'a>,
 
     /// * Your `on_error()` closure. Normally it won't be called.
-    on_error: Box<dyn FnMut(FlacInternalDecoderError)>,
+    on_error: Box<dyn FnMut(FlacInternalDecoderError) + 'a>,
 
     /// * Set to true to let the decoder check the MD5 sum of the decoded samples.
     md5_checking: bool,
@@ -1704,18 +1704,18 @@ where
     pub cue_sheets: Vec<FlacCueSheet>,
 }
 
-impl<ReadSeek> FlacDecoderUnmovable<ReadSeek>
+impl<'a, ReadSeek> FlacDecoderUnmovable<'a, ReadSeek>
 where
     ReadSeek: Read + Seek + Debug {
     pub fn new(
         reader: ReadSeek,
-        on_read: Box<dyn FnMut(&mut ReadSeek, &mut [u8]) -> (usize, FlacReadStatus)>,
-        on_seek: Box<dyn FnMut(&mut ReadSeek, u64) -> Result<(), io::Error>>,
-        on_tell: Box<dyn FnMut(&mut ReadSeek) -> Result<u64, io::Error>>,
-        on_length: Box<dyn FnMut(&mut ReadSeek) -> Result<u64, io::Error>>,
-        on_eof: Box<dyn FnMut(&mut ReadSeek) -> bool>,
-        on_write: Box<dyn FnMut(&[Vec<i32>], &SamplesInfo) -> Result<(), io::Error>>,
-        on_error: Box<dyn FnMut(FlacInternalDecoderError)>,
+        on_read: Box<dyn FnMut(&mut ReadSeek, &mut [u8]) -> (usize, FlacReadStatus) + 'a>,
+        on_seek: Box<dyn FnMut(&mut ReadSeek, u64) -> Result<(), io::Error> + 'a>,
+        on_tell: Box<dyn FnMut(&mut ReadSeek) -> Result<u64, io::Error> + 'a>,
+        on_length: Box<dyn FnMut(&mut ReadSeek) -> Result<u64, io::Error> + 'a>,
+        on_eof: Box<dyn FnMut(&mut ReadSeek) -> bool + 'a>,
+        on_write: Box<dyn FnMut(&[Vec<i32>], &SamplesInfo) -> Result<(), io::Error> + 'a>,
+        on_error: Box<dyn FnMut(FlacInternalDecoderError) + 'a>,
         md5_checking: bool,
         scale_to_i32_range: bool,
         desired_audio_form: FlacAudioForm,
@@ -2169,7 +2169,7 @@ where
     pub fn finalize(self) {}
 }
 
-impl<ReadSeek> Debug for FlacDecoderUnmovable<ReadSeek>
+impl<'a, ReadSeek> Debug for FlacDecoderUnmovable<'_, ReadSeek>
 where
     ReadSeek: Read + Seek + Debug {
     fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
@@ -2195,7 +2195,7 @@ where
     }
 }
 
-impl<ReadSeek> Drop for FlacDecoderUnmovable<ReadSeek>
+impl<'a, ReadSeek> Drop for FlacDecoderUnmovable<'_, ReadSeek>
 where
     ReadSeek: Read + Seek + Debug {
     fn drop(&mut self) {
@@ -2205,30 +2205,30 @@ where
 
 /// ## A wrapper for `FlacDecoderUnmovable`, which provides a Box to make `FlacDecoderUnmovable` never move.
 /// This is the struct that should be mainly used by you.
-pub struct FlacDecoder<ReadSeek>
+pub struct FlacDecoder<'a, ReadSeek>
 where
     ReadSeek: Read + Seek + Debug {
-    decoder: Box<FlacDecoderUnmovable<ReadSeek>>,
+    decoder: Box<FlacDecoderUnmovable<'a, ReadSeek>>,
 }
 
-impl<ReadSeek> FlacDecoder<ReadSeek>
+impl<'a, ReadSeek> FlacDecoder<'a, ReadSeek>
 where
     ReadSeek: Read + Seek + Debug {
     pub fn new(
         reader: ReadSeek,
-        on_read: Box<dyn FnMut(&mut ReadSeek, &mut [u8]) -> (usize, FlacReadStatus)>,
-        on_seek: Box<dyn FnMut(&mut ReadSeek, u64) -> Result<(), io::Error>>,
-        on_tell: Box<dyn FnMut(&mut ReadSeek) -> Result<u64, io::Error>>,
-        on_length: Box<dyn FnMut(&mut ReadSeek) -> Result<u64, io::Error>>,
-        on_eof: Box<dyn FnMut(&mut ReadSeek) -> bool>,
-        on_write: Box<dyn FnMut(&[Vec<i32>], &SamplesInfo) -> Result<(), io::Error>>,
-        on_error: Box<dyn FnMut(FlacInternalDecoderError)>,
+        on_read: Box<dyn FnMut(&mut ReadSeek, &mut [u8]) -> (usize, FlacReadStatus) + 'a>,
+        on_seek: Box<dyn FnMut(&mut ReadSeek, u64) -> Result<(), io::Error> + 'a>,
+        on_tell: Box<dyn FnMut(&mut ReadSeek) -> Result<u64, io::Error> + 'a>,
+        on_length: Box<dyn FnMut(&mut ReadSeek) -> Result<u64, io::Error> + 'a>,
+        on_eof: Box<dyn FnMut(&mut ReadSeek) -> bool + 'a>,
+        on_write: Box<dyn FnMut(&[Vec<i32>], &SamplesInfo) -> Result<(), io::Error> + 'a>,
+        on_error: Box<dyn FnMut(FlacInternalDecoderError) + 'a>,
         md5_checking: bool,
         scale_to_i32_range: bool,
         desired_audio_form: FlacAudioForm,
     ) -> Result<Self, FlacDecoderError> {
         let mut ret = Self {
-            decoder: Box::new(FlacDecoderUnmovable::new(
+            decoder: Box::new(FlacDecoderUnmovable::<'a>::new(
                 reader,
                 on_read,
                 on_seek,
@@ -2301,7 +2301,7 @@ where
     pub fn finalize(self) {}
 }
 
-impl<ReadSeek> Debug for FlacDecoder<ReadSeek>
+impl<'a, ReadSeek> Debug for FlacDecoder<'_, ReadSeek>
 where
     ReadSeek: Read + Seek + Debug {
     fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
