@@ -1,4 +1,7 @@
+#![allow(unused_imports)]
 pub mod flac;
+
+use flac::*;
 
 pub use flac::{FlacCompression, FlacEncoderParams};
 pub use flac::{FlacAudioForm, SamplesInfo};
