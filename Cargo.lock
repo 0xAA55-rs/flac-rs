@@ -55,7 +55,7 @@ dependencies = [
 
 [[package]]
 name = "flac-rs"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "id3",
  "libflac-sys",
