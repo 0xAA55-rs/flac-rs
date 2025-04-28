@@ -10,8 +10,11 @@ use std::{any::Any, io::{Read, Write, Seek}};
 
 use std::io::SeekFrom;
 
+/// ## The compression level of the FLAC file
+/// A higher number means less file size. Default compression level is 5
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FlacCompression {
+    /// Almost no compression
     Level0 = 0,
     Level1 = 1,
     Level2 = 2,
@@ -20,16 +23,32 @@ pub enum FlacCompression {
     Level5 = 5,
     Level6 = 6,
     Level7 = 7,
+
+    /// Maximum compression
     Level8 = 8
 }
 
+/// ## Parameters for the encoder to encode the audio.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FlacEncoderParams {
+    /// * If set to true, the FLAC encoder will send the encoded data to a decoder to verify if the encoding is successful, and the encoding process will be slower.
     pub verify_decoded: bool,
+
+    /// * The compression level of the FLAC file, a higher number means less file size.
     pub compression: FlacCompression,
+
+    /// * Num channels of the audio file, max channels is 8.
     pub channels: u16,
+
+    /// * The sample rate of the audio file. Every FLAC frame contains this value.
     pub sample_rate: u32,
+
+    /// * How many bits in an `i32` are valid for a sample, for example, if this value is 16, your `i32` sample should be between -32768 to +32767.
+    ///   Because the FLAC encoder **only eats `[i32]`** , and you can't just pass `[i16]` to it.
+    ///   It seems like 8, 12, 16, 20, 24, 32 are valid values for this field.
     pub bits_per_sample: u32,
+
+    /// * How many samples you will put into the encoder, set to zero if you don't know.
     pub total_samples_estimate: u64,
 }
 
@@ -59,13 +78,25 @@ use id3::{self, TagLike};
 
 use libflac_sys::*;
 
+/// ## A trait for me to coveniently write `FlacDecoderError`, `FlacDecoderInitError`, `FlacEncoderError`, `FlacEncoderInitError`
+/// Not for you to use.
 pub trait FlacError: Any {
+    /// * This method allows the trait to be able to downcast to a specific error struct.
     fn as_any(&self) -> &dyn Any;
+
+    /// * Get the error or status code from the error struct. The code depends on which type of the error struct.
     fn get_code(&self) -> u32;
+
+    /// * Get the message that describes the error code, mostly useful if you don't know what exact the error type is.
     fn get_message(&self) -> &'static str;
+
+    /// * On which function call to get the error. Also useful for addressing errors.
     fn get_function(&self) -> &'static str;
+
+    /// * This function is implemented by the specific error struct, each struct has a different way to describe the code.
     fn get_message_from_code(&self) -> &'static str;
 
+    /// * The common formatter for the error.
     fn format(&self, f: &mut Formatter) -> fmt::Result {
         let code = self.get_code();
         let message = self.get_message();
@@ -97,10 +128,16 @@ macro_rules! impl_FlacError {
     }
 }
 
+/// ## Error info for the encoder, most of the encoder functions return this.
 #[derive(Debug, Clone, Copy)]
 pub struct FlacEncoderError {
+    /// * This code is actually `FlacEncoderErrorCode`
     pub code: u32,
+
+    /// * The description of the status, as a constant string from `libflac-sys`
     pub message: &'static str,
+
+    /// * Which function generates this error
     pub function: &'static str,
 }
 
@@ -122,16 +159,34 @@ impl FlacEncoderError {
 
 impl_FlacError!(FlacEncoderError);
 
+/// ## The error code for `FlacEncoderError`
 #[derive(Debug, Clone, Copy)]
 pub enum FlacEncoderErrorCode {
+    /// * The encoder is in the normal OK state and samples can be processed.
     StreamEncoderOk = FLAC__STREAM_ENCODER_OK as isize,
+
+    /// * The encoder is in the uninitialized state; one of the FLAC__stream_encoder_init_*() functions must be called before samples can be processed.
     StreamEncoderUninitialized = FLAC__STREAM_ENCODER_UNINITIALIZED as isize,
+
+    /// * An error occurred in the underlying Ogg layer.
     StreamEncoderOggError = FLAC__STREAM_ENCODER_OGG_ERROR as isize,
+
+    /// * An error occurred in the underlying verify stream decoder; check FLAC__stream_encoder_get_verify_decoder_state().
     StreamEncoderVerifyDecoderError = FLAC__STREAM_ENCODER_VERIFY_DECODER_ERROR as isize,
+
+    /// * The verify decoder detected a mismatch between the original audio signal and the decoded audio signal.
     StreamEncoderVerifyMismatchInAudioData = FLAC__STREAM_ENCODER_VERIFY_MISMATCH_IN_AUDIO_DATA as isize,
+
+    /// * One of the closures returned a fatal error.
     StreamEncoderClientError = FLAC__STREAM_ENCODER_CLIENT_ERROR as isize,
+
+    /// * An I/O error occurred while opening/reading/writing a file.
     StreamEncoderIOError = FLAC__STREAM_ENCODER_IO_ERROR as isize,
+
+    /// * An error occurred while writing the stream; usually, the `on_write()` returned an error.
     StreamEncoderFramingError = FLAC__STREAM_ENCODER_FRAMING_ERROR as isize,
+
+    /// * Memory allocation failed
     StreamEncoderMemoryAllocationError = FLAC__STREAM_ENCODER_MEMORY_ALLOCATION_ERROR as isize,
 }
 
@@ -143,9 +198,9 @@ impl Display for FlacEncoderErrorCode {
             Self::StreamEncoderOggError => write!(f, "An error occurred in the underlying Ogg layer."),
             Self::StreamEncoderVerifyDecoderError => write!(f, "An error occurred in the underlying verify stream decoder; check FLAC__stream_encoder_get_verify_decoder_state()."),
             Self::StreamEncoderVerifyMismatchInAudioData => write!(f, "The verify decoder detected a mismatch between the original audio signal and the decoded audio signal."),
-            Self::StreamEncoderClientError => write!(f, "One of the callbacks returned a fatal error."),
-            Self::StreamEncoderIOError => write!(f, "An I/O error occurred while opening/reading/writing a file. Check errno."),
-            Self::StreamEncoderFramingError => write!(f, "An error occurred while writing the stream; usually, the write_callback returned an error."),
+            Self::StreamEncoderClientError => write!(f, "One of the closures returned a fatal error."),
+            Self::StreamEncoderIOError => write!(f, "An I/O error occurred while opening/reading/writing a file."),
+            Self::StreamEncoderFramingError => write!(f, "An error occurred while writing the stream; usually, the `on_write()` returned an error."),
             Self::StreamEncoderMemoryAllocationError => write!(f, "Memory allocation failed."),
         }
     }
@@ -171,10 +226,16 @@ impl From<u32> for FlacEncoderErrorCode {
 
 impl std::error::Error for FlacEncoderErrorCode {}
 
+/// ## Error info for `initialize()`
 #[derive(Debug, Clone, Copy)]
 pub struct FlacEncoderInitError {
+    /// * This code is actually `FlacEncoderInitErrorCode`
     pub code: u32,
+
+    /// * The description of the status, as a constant string from `libflac-sys`
     pub message: &'static str,
+
+    /// * Which function generates this error
     pub function: &'static str,
 }
 
@@ -196,21 +257,56 @@ impl FlacEncoderInitError {
 
 impl_FlacError!(FlacEncoderInitError);
 
+/// ## The error code for `FlacEncoderInitError`
 #[derive(Debug, Clone, Copy)]
 pub enum FlacEncoderInitErrorCode {
+    /// * Initialization was successful
     StreamEncoderInitStatusOk = FLAC__STREAM_ENCODER_INIT_STATUS_OK as isize,
+
+    /// * General failure to set up encoder; call FLAC__stream_encoder_get_state() for cause.
     StreamEncoderInitStatusEncoderError = FLAC__STREAM_ENCODER_INIT_STATUS_ENCODER_ERROR as isize,
+
+    /// * The library was not compiled with support for the given container format.
     StreamEncoderInitStatusUnsupportedContainer = FLAC__STREAM_ENCODER_INIT_STATUS_UNSUPPORTED_CONTAINER as isize,
+
+    /// * A required callback was not supplied.
     StreamEncoderInitStatusInvalidCallbacks = FLAC__STREAM_ENCODER_INIT_STATUS_INVALID_CALLBACKS as isize,
+
+    /// * The encoder has an invalid setting for number of channels.
     StreamEncoderInitStatusInvalidNumberOfChannels = FLAC__STREAM_ENCODER_INIT_STATUS_INVALID_NUMBER_OF_CHANNELS as isize,
+
+    /// * The encoder has an invalid setting for bits-per-sample. FLAC supports 4-32 bps.
     StreamEncoderInitStatusInvalidBitsPerSample = FLAC__STREAM_ENCODER_INIT_STATUS_INVALID_BITS_PER_SAMPLE as isize,
+
+    /// * The encoder has an invalid setting for the input sample rate.
     StreamEncoderInitStatusInvalidSampleRate = FLAC__STREAM_ENCODER_INIT_STATUS_INVALID_SAMPLE_RATE as isize,
+
+    /// * The encoder has an invalid setting for the block size.
     StreamEncoderInitStatusInvalidBlockSize = FLAC__STREAM_ENCODER_INIT_STATUS_INVALID_BLOCK_SIZE as isize,
+
+    /// * The encoder has an invalid setting for the maximum LPC order.
     StreamEncoderInitStatusInvalidMaxLpcOrder = FLAC__STREAM_ENCODER_INIT_STATUS_INVALID_MAX_LPC_ORDER as isize,
+
+    /// * The encoder has an invalid setting for the precision of the quantized linear predictor coefficients.
     StreamEncoderInitStatusInvalidQlpCoeffPrecision = FLAC__STREAM_ENCODER_INIT_STATUS_INVALID_QLP_COEFF_PRECISION as isize,
+
+    /// * The specified block size is less than the maximum LPC order.
     StreamEncoderInitStatusBlockSizeTooSmallForLpcOrder = FLAC__STREAM_ENCODER_INIT_STATUS_BLOCK_SIZE_TOO_SMALL_FOR_LPC_ORDER as isize,
+
+    /// * The encoder is bound to the Subset but other settings violate it.
     StreamEncoderInitStatusNotStreamable = FLAC__STREAM_ENCODER_INIT_STATUS_NOT_STREAMABLE as isize,
+
+    /// * The metadata input to the encoder is invalid, in one of the following ways:
+    ///   * FLAC__stream_encoder_set_metadata() was called with a null pointer but a block count > 0
+    ///   * One of the metadata blocks contains an undefined type
+    ///   * It contains an illegal CUESHEET as checked by FLAC__format_cuesheet_is_legal()
+    ///   * It contains an illegal SEEKTABLE as checked by FLAC__format_seektable_is_legal()
+    ///   * It contains more than one SEEKTABLE block or more than one VORBIS_COMMENT block
+    ///   * FLAC__STREAM_ENCODER_INIT_STATUS_ALREADY_INITIALIZED
+    ///   * FLAC__stream_encoder_init_*() was called when the encoder was already initialized, usually because FLAC__stream_encoder_finish() was not called.
     StreamEncoderInitStatusInvalidMetadata = FLAC__STREAM_ENCODER_INIT_STATUS_INVALID_METADATA as isize,
+
+    /// * FLAC__stream_encoder_init_*() was called when the encoder was already initialized, usually because FLAC__stream_encoder_finish() was not called.
     StreamEncoderInitStatusAlreadyInitialized = FLAC__STREAM_ENCODER_INIT_STATUS_ALREADY_INITIALIZED as isize,
 }
 
@@ -280,6 +376,7 @@ impl From<FlacEncoderInitError> for FlacEncoderError {
     }
 }
 
+/// ## Available comment keys for metadata usage.
 pub const COMMENT_KEYS: [&str; 33] = [
     "ACTOR",
     "ALBUM",
@@ -316,14 +413,28 @@ pub const COMMENT_KEYS: [&str; 33] = [
     "vendor"
 ];
 
+/// ## Picture data, normally the cover of the CD
 #[derive(Clone)]
 pub struct PictureData {
+    /// * The binary picture data as a byte array
     pub picture: Vec<u8>,
+
+    /// * The mime type of the picture data
     pub mime_type: String,
+
+    /// * The description
     pub description: String,
+
+    /// * The width of the picture
     pub width: u32,
+
+    /// * The height of the picture
     pub height: u32,
+
+    /// * The color depth of the picture
     pub depth: u32,
+
+    /// * How many colors in the picture
     pub colors: u32,
 }
 
@@ -368,7 +479,7 @@ impl Default for PictureData {
 #[derive(Debug)]
 #[repr(C)]
 struct FlacMetadata {
-    // https://xiph.org/flac/api/group__flac__metadata__object.html
+    /// * See [https://xiph.org/flac/api/group__flac__metadata__object.html]
     metadata: *mut FLAC__StreamMetadata,
 }
 
@@ -426,6 +537,7 @@ fn make_sz(s: &str) -> String {
     s
 }
 
+/// ## The track type
 #[derive(Debug, Clone, Copy)]
 pub enum FlacTrackType {
     Audio,
@@ -441,23 +553,35 @@ impl Display for FlacTrackType {
     }
 }
 
-/// offset: Offset in samples, relative to the track offset, of the index point.
-/// number: The index point number
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct FlacCueSheetIndex {
+    /// * Offset in samples, relative to the track offset, of the index point.
     pub offset: u64,
+
+    /// * The index point number
     pub number: u8,
 }
 
 #[derive(Clone)]
 #[repr(C)]
 pub struct FlacCueTrack {
-    pub offset: u64, // in samples
+    /// * In samples
+    pub offset: u64,
+
+    /// * Track number
     pub track_no: u8,
+
+    /// * ISRC
     pub isrc: [i8; 13],
+
+    /// * What type is this track, is it audio or not.
     pub type_: FlacTrackType,
+
+    /// * Pre_emphasis
     pub pre_emphasis: bool,
+
+    /// * Indices
     pub indices: Vec<FlacCueSheetIndex>,
 }
 
@@ -493,11 +617,19 @@ impl Display for FlacCueTrack {
     }
 }
 
+/// ## Cue sheet for the FLAC audio
 #[derive(Clone)]
 pub struct FlacCueSheet {
+    /// * media_catalog_number
     pub media_catalog_number: [i8; 129],
+
+    /// * In samples
     pub lead_in: u64,
+
+    /// * Is this FLAC file from a CD or not.
     pub is_cd: bool,
+
+    /// * The tracks
     pub tracks: BTreeMap<u8, FlacCueTrack>,
 }
 
@@ -649,21 +781,46 @@ impl Drop for FlacMetadata {
     }
 }
 
+/// ## The encoder's core structure, but can't move after `initialize()` has been called.
+/// Use a `Box` to contain it, or just don't move it will be fine.
 pub struct FlacEncoderUnmovable<'a, WriteSeek>
 where
     WriteSeek: Write + Seek + Debug {
-    // https://xiph.org/flac/api/group__flac__stream__encoder.html
+    /// * See: <https://xiph.org/flac/api/group__flac__stream__encoder.html>
     encoder: *mut FLAC__StreamEncoder,
+
+    /// * This is a piece of allocated memory as the libFLAC form, for libFLAC to access the metadata that you provided to it.
     metadata: Vec<FlacMetadata>,
+
+    /// * Is encoder initialized or not
     encoder_initialized: bool,
+
+    /// * The parameters you provided to create the encoder.
     params: FlacEncoderParams,
+
+    /// * A mutable reference to the writer. The encoder uses this `writer` to write the FLAC file.
     writer: &'a mut WriteSeek,
+
+    /// * Your `on_write()` closure, to receive the encoded FLAC file pieces.
+    /// * Instead of just writing the data to the `writer`, you can do what you want to do to the data, and return a proper `Result`.
     on_write: Box<dyn FnMut(&mut WriteSeek, &[u8]) -> Result<(), io::Error> + 'a>,
+
+    /// * Your `on_seek()` closure. Often works by calling `writer.seek()` to help your encoder to move the file pointer.
     on_seek: Box<dyn FnMut(&mut WriteSeek, u64) -> Result<(), io::Error> + 'a>,
+
+    /// * Your `on_tell()` closure. Often works by calling `writer.stream_position()` to help your encoder to know the current write position.
     on_tell: Box<dyn FnMut(&mut WriteSeek) -> Result<u64, io::Error> + 'a>,
+
+    /// * The metadata to be added to the FLAC file. You can only add the metadata before calling `initialize()`
     comments: BTreeMap<&'static str, String>,
+
+    /// * The cue sheets to be added to the FLAC file. You can only add the cue sheets before calling `initialize()`
     cue_sheets: Vec<FlacCueSheet>,
+
+    /// * The pictures to be added to the FLAC file. You can only add the pictures before calling `initialize()`
     pictures: Vec<PictureData>,
+
+    /// * Did you called `finish()`. This variable prevents a duplicated finish.
     finished: bool,
 }
 
@@ -698,6 +855,7 @@ where
         }
     }
 
+    /// * If the status code is ok then return `Ok(())` else return `Err()`
     pub fn get_status_as_result(&self, function: &'static str) -> Result<(), FlacEncoderError> {
         let code = unsafe {FLAC__stream_encoder_get_state(self.encoder)};
         if code == 0 {
@@ -707,19 +865,27 @@ where
         }
     }
 
+    /// * Regardless of the status code, just return it as an `Err()`
     pub fn get_status_as_error(&self, function: &'static str) -> Result<(), FlacEncoderError> {
         let code = unsafe {FLAC__stream_encoder_get_state(self.encoder)};
         Err(FlacEncoderError::new(code, function))
     }
 
+    /// * The pointer to the struct, as `client_data` to be transferred to a field of the libFLAC encoder `private_` struct.
+    /// * All of the callback functions need the `client_data` to retrieve `self`, and libFLAC forgot to provide a function for us to change the `client_data`
+    /// * That's why our struct is `Unmovable`
     pub fn as_ptr(&self) -> *const Self {
         self as *const Self
     }
 
+    /// * The pointer to the struct, as `client_data` to be transferred to a field of the libFLAC encoder `private_` struct.
+    /// * All of the callback functions need the `client_data` to retrieve `self`, and libFLAC forgot to provide a function for us to change the `client_data`
+    /// * That's why our struct is `Unmovable`
     pub fn as_mut_ptr(&mut self) -> *mut Self {
         self as *mut Self
     }
 
+    /// * Insert a metadata key-value pair before calling to `initialize()`
     pub fn insert_comments(&mut self, key: &'static str, value: &str) -> Result<(), FlacEncoderInitError> {
         if self.encoder_initialized {
             Err(FlacEncoderInitError::new(FLAC__STREAM_ENCODER_INIT_STATUS_ALREADY_INITIALIZED, "FlacEncoderUnmovable::insert_comments"))
@@ -731,6 +897,7 @@ where
         }
     }
 
+    /// * Insert a cue sheet before calling to `initialize()`
     pub fn insert_cue_sheet(&mut self, cue_sheet: &FlacCueSheet) -> Result<(), FlacEncoderInitError> {
         if self.encoder_initialized {
             Err(FlacEncoderInitError::new(FLAC__STREAM_ENCODER_INIT_STATUS_ALREADY_INITIALIZED, "FlacEncoderUnmovable::insert_cue_track"))
@@ -740,6 +907,7 @@ where
         }
     }
 
+    /// * Add a picture before calling to `initialize()`
     pub fn add_picture(&mut self, picture_binary: &[u8], description: &str, mime_type: &str, width: u32, height: u32, depth: u32, colors: u32) -> Result<(), FlacEncoderInitError> {
         if self.encoder_initialized {
             Err(FlacEncoderInitError::new(FLAC__STREAM_ENCODER_INIT_STATUS_ALREADY_INITIALIZED, "FlacEncoderUnmovable::set_picture"))
@@ -776,6 +944,7 @@ where
         Ok(())
     }
 
+    /// * The `initialize()` function. Sets up all of the callback functions, transfers all of the metadata to the encoder, and then sets `client_data` to the address of the `self` struct.
     pub fn initialize(&mut self) -> Result<(), FlacEncoderError> {
         if self.encoder_initialized {
             return Err(FlacEncoderInitError::new(FLAC__STREAM_ENCODER_INIT_STATUS_ALREADY_INITIALIZED, "FlacEncoderUnmovable::init").into())
@@ -850,6 +1019,7 @@ where
         self.get_status_as_result("FlacEncoderUnmovable::Init()")
     }
 
+    /// * Retrieve the params from the encoder where you provided it for the creation of the encoder.
     pub fn get_params(&self) -> FlacEncoderParams {
         self.params
     }
@@ -907,10 +1077,13 @@ where
         if SHOW_CALLBACKS {println!("{:?}", WrappedStreamMetadata(_meta))}
     }
 
+    /// * Calls your `on_tell()` closure to get the current writing position.
     pub fn tell(&mut self) -> Result<u64, io::Error> {
         (self.on_tell)(self.writer)
     }
 
+    /// * Encode the interleaved samples (interleaved by channels)
+    /// * See `FlacEncoderParams` for the information on how to provide your samples in the `[i32]` array.
     pub fn write_interleaved_samples(&mut self, samples: &[i32]) -> Result<(), FlacEncoderError> {
         #[cfg(debug_assertions)]
         if SHOW_CALLBACKS {println!("write_interleaved_samples([i32; {}])", samples.len());}
@@ -927,6 +1100,8 @@ where
         }
     }
 
+    /// * Encode mono audio. Regardless of the channel setting of the FLAC encoder, the sample will be duplicated to the number of channels to accomplish the encoding
+    /// * See `FlacEncoderParams` for the information on how to provide your samples in the `[i32]` array.
     pub fn write_mono_channel(&mut self, monos: &[i32]) -> Result<(), FlacEncoderError> {
         #[cfg(debug_assertions)]
         if SHOW_CALLBACKS {println!("write_mono_channel([i32; {}])", monos.len());}
@@ -943,6 +1118,10 @@ where
         }
     }
 
+    /// * Encode stereo audio, if the channels of the encoder are mono, the stereo samples will be turned to mono samples to encode.
+    /// * If the channels of the encoder are stereo, then the samples will be encoded as it is.
+    /// * If the encoder is multi-channel other than mono and stereo, an error is returned.
+    /// * See `FlacEncoderParams` for the information on how to provide your samples in the `i32` way.
     pub fn write_stereos(&mut self, stereos: &[(i32, i32)]) -> Result<(), FlacEncoderError> {
         #[cfg(debug_assertions)]
         if SHOW_CALLBACKS {println!("write_stereos([(i32, i32); {}])", stereos.len());}
@@ -960,6 +1139,8 @@ where
         }
     }
 
+    /// * Encode multiple mono channels into the multi-channel encoder.
+    /// * See `FlacEncoderParams` for the information on how to provide your samples in the `i32` way.
     pub fn write_monos(&mut self, monos: &[Vec<i32>]) -> Result<(), FlacEncoderError> {
         #[cfg(debug_assertions)]
         if SHOW_CALLBACKS {println!("write_monos([Vec<i32>; {}])", monos.len());}
@@ -983,6 +1164,8 @@ where
         }
     }
 
+    /// * Encode samples by the audio frame array. Each audio frame contains one sample for every channel.
+    /// * See `FlacEncoderParams` for the information on how to provide your samples in the `i32` way.
     pub fn write_frames(&mut self, frames: &[Vec<i32>]) -> Result<(), FlacEncoderError> {
         #[cfg(debug_assertions)]
         if SHOW_CALLBACKS {println!("write_frames([Vec<i32>; {}])", frames.len());}
@@ -1000,6 +1183,7 @@ where
         Ok(())
     }
 
+    /// * After sending all of the samples to encode, must call `finish()` to complete encoding.
     pub fn finish(&mut self) -> Result<(), FlacEncoderError> {
         if self.finished {
             return Ok(())
@@ -1029,6 +1213,7 @@ where
         };
     }
 
+    /// * Call this function if you don't want the encoder anymore.
     pub fn finalize(self) {}
 }
 
@@ -1045,7 +1230,8 @@ where
             .field("on_tell", &"{{closure}}")
             .field("comments", &self.comments)
             .field("cue_sheets", &self.cue_sheets)
-            .field("picture", &format_args!("..."))
+            .field("pictures", &format_args!("..."))
+            .field("finished", &self.finished)
             .finish()
     }
 }
@@ -1058,6 +1244,8 @@ where
     }
 }
 
+/// ## A wrapper for `FlacEncoderUnmovable`, which provides a Box to make `FlacEncoderUnmovable` never move.
+/// This is the struct that should be mainly used by you.
 pub struct FlacEncoder<'a, WriteSeek>
 where
     WriteSeek: Write + Seek + Debug {
@@ -1079,14 +1267,17 @@ where
         })
     }
 
+    /// * Insert a metadata key-value pair before calling to `initialize()`
     pub fn insert_comments(&mut self, key: &'static str, value: &str) -> Result<(), FlacEncoderInitError> {
         self.encoder.insert_comments(key, value)
     }
 
+    /// * Insert a cue sheet before calling to `initialize()`
     pub fn insert_cue_sheet(&mut self, cue_sheet: &FlacCueSheet) -> Result<(), FlacEncoderInitError> {
         self.encoder.insert_cue_sheet(cue_sheet)
     }
 
+    /// * Add a picture before calling to `initialize()`
     pub fn add_picture(&mut self, picture_binary: &[u8], description: &str, mime_type: &str, width: u32, height: u32, depth: u32, colors: u32) -> Result<(), FlacEncoderInitError> {
         self.encoder.add_picture(picture_binary, description, mime_type, width, height, depth, colors)
     }
@@ -1096,14 +1287,17 @@ where
         self.encoder.inherit_metadata_from_id3(tag)
     }
 
+    /// * Retrieve the params from the encoder where you provided it for the creation of the encoder.
     pub fn get_params(&self) -> FlacEncoderParams {
         self.encoder.get_params()
     }
 
+    /// * Calls your `on_tell()` closure to get the current writing position.
     pub fn tell(&mut self) -> Result<u64, io::Error> {
         self.encoder.tell()
     }
 
+    /// * The `initialize()` function. Sets up all of the callback functions, transfers all of the metadata to the encoder.
     pub fn initialize(&mut self) -> Result<(), FlacEncoderInitError> {
         if !self.encoder.encoder_initialized {
             self.encoder.initialize()?
@@ -1111,30 +1305,44 @@ where
         Ok(())
     }
 
+    /// * Encode the interleaved samples (interleaved by channels)
+    /// * See `FlacEncoderParams` for the information on how to provide your samples in the `[i32]` array.
     pub fn write_interleaved_samples(&mut self, samples: &[i32]) -> Result<(), FlacEncoderError> {
         self.encoder.write_interleaved_samples(samples)
     }
 
+    /// * Encode mono audio. Regardless of the channel setting of the FLAC encoder, the sample will be duplicated to the number of channels to accomplish the encoding
+    /// * See `FlacEncoderParams` for the information on how to provide your samples in the `[i32]` array.
     pub fn write_mono_channel(&mut self, monos: &[i32]) -> Result<(), FlacEncoderError> {
         self.encoder.write_mono_channel(monos)
     }
 
+    /// * Encode stereo audio, if the channels of the encoder are mono, the stereo samples will be turned to mono samples to encode.
+    /// * If the channels of the encoder are stereo, then the samples will be encoded as it is.
+    /// * If the encoder is multi-channel other than mono and stereo, an error is returned.
+    /// * See `FlacEncoderParams` for the information on how to provide your samples in the `i32` way.
     pub fn write_stereos(&mut self, stereos: &[(i32, i32)]) -> Result<(), FlacEncoderError> {
         self.encoder.write_stereos(stereos)
     }
 
+    /// * Encode multiple mono channels into the multi-channel encoder.
+    /// * See `FlacEncoderParams` for the information on how to provide your samples in the `i32` way.
     pub fn write_monos(&mut self, monos: &[Vec<i32>]) -> Result<(), FlacEncoderError> {
         self.encoder.write_monos(monos)
     }
 
+    /// * Encode samples by the audio frame array. Each audio frame contains one sample for every channel.
+    /// * See `FlacEncoderParams` for the information on how to provide your samples in the `i32` way.
     pub fn write_frames(&mut self, frames: &[Vec<i32>]) -> Result<(), FlacEncoderError> {
         self.encoder.write_frames(frames)
     }
 
+    /// * After sending all of the samples to encode, must call `finish()` to complete encoding.
     pub fn finish(&mut self) -> Result<(), FlacEncoderError> {
         self.encoder.finish()
     }
 
+    /// * Call this function if you don't want the encoder anymore.
     pub fn finalize(self) {}
 }
 
@@ -1150,8 +1358,13 @@ where
 
 #[derive(Debug, Clone, Copy)]
 pub struct FlacDecoderError {
+    /// * This code is actually `FlacDecoderErrorCode`
     pub code: u32,
+
+    /// * The description of the status, as a constant string from `libflac-sys`
     pub message: &'static str,
+
+    /// * Which function generates this error
     pub function: &'static str,
 }
 
@@ -1175,15 +1388,34 @@ impl_FlacError!(FlacDecoderError);
 
 #[derive(Debug, Clone, Copy)]
 pub enum FlacDecoderErrorCode {
+    /// * The decoder is ready to search for metadata.
     StreamDecoderSearchForMetadata = FLAC__STREAM_DECODER_SEARCH_FOR_METADATA as isize,
+
+    /// * The decoder is ready to or is in the process of reading metadata.
     StreamDecoderReadMetadata = FLAC__STREAM_DECODER_READ_METADATA as isize,
+
+    /// * The decoder is ready to or is in the process of searching for the frame sync code.
     StreamDecoderSearchForFrameSync = FLAC__STREAM_DECODER_SEARCH_FOR_FRAME_SYNC as isize,
+
+    /// * The decoder is ready to or is in the process of reading a frame.
     StreamDecoderReadFrame = FLAC__STREAM_DECODER_READ_FRAME as isize,
+
+    /// * The decoder has reached the end of the stream.
     StreamDecoderEndOfStream = FLAC__STREAM_DECODER_END_OF_STREAM as isize,
+
+    /// * An error occurred in the underlying Ogg layer.
     StreamDecoderOggError = FLAC__STREAM_DECODER_OGG_ERROR as isize,
+
+    /// * An error occurred while seeking. The decoder must be flushed with FLAC__stream_decoder_flush() or reset with FLAC__stream_decoder_reset() before decoding can continue.
     StreamDecoderSeekError = FLAC__STREAM_DECODER_SEEK_ERROR as isize,
+
+    /// * The decoder was aborted by the read or write callback.
     StreamDecoderAborted = FLAC__STREAM_DECODER_ABORTED as isize,
+
+    /// * An error occurred allocating memory. The decoder is in an invalid state and can no longer be used.
     StreamDecoderMemoryAllocationError = FLAC__STREAM_DECODER_MEMORY_ALLOCATION_ERROR as isize,
+
+    /// * The decoder is in the uninitialized state; one of the FLAC__stream_decoder_init_*() functions must be called before samples can be processed.
     StreamDecoderUninitialized = FLAC__STREAM_DECODER_UNINITIALIZED as isize,
 }
 
@@ -1227,8 +1459,13 @@ impl std::error::Error for FlacDecoderErrorCode {}
 
 #[derive(Debug, Clone, Copy)]
 pub struct FlacDecoderInitError {
+    /// * This code is actually `FlacDecoderInitErrorCode`
     pub code: u32,
+
+    /// * The description of the status, as a constant string from `libflac-sys`
     pub message: &'static str,
+
+    /// * Which function generates this error
     pub function: &'static str,
 }
 
@@ -1310,10 +1547,16 @@ impl From<FlacDecoderInitError> for FlacDecoderError {
     }
 }
 
+/// ## The result value for your `on_read()` closure to return
 #[derive(Debug, Clone, Copy)]
 pub enum FlacReadStatus {
+    /// * Let the FLAC codec continue to process
     GoOn,
+
+    /// * Hit the end of the file
     Eof,
+
+    /// * Error occurred, let the FLAC codec abort the process
     Abort,
 }
 
@@ -1327,13 +1570,25 @@ impl Display for FlacReadStatus {
     }
 }
 
+/// ## The FLAC decoder internal error value for your `on_error()` closure to report.
 #[derive(Debug, Clone, Copy)]
 pub enum FlacInternalDecoderError {
+    /// * An error in the stream caused the decoder to lose synchronization.
     LostSync,
+
+    /// * The decoder encountered a corrupted frame header.
     BadHeader,
+
+    /// * The frame's data did not match the CRC in the footer.
     FrameCrcMismatch,
+
+    /// * The decoder encountered reserved fields in use in the stream.
     UnparseableStream,
+
+    /// * The decoder encountered a corrupted metadata block.
     BadMetadata,
+
+    /// * The decoder encountered a otherwise valid frame in which the decoded samples exceeded the range offered by the stated bit depth.
     OutOfBounds,
 }
 
@@ -1352,18 +1607,34 @@ impl Display for FlacInternalDecoderError {
 
 impl std::error::Error for FlacInternalDecoderError {}
 
+/// ## The form of audio samples
 #[derive(Debug, Clone, Copy)]
 pub enum FlacAudioForm {
+    /// * For the frame array, each audio frame is one sample per channel.
+    /// * For example, a stereo frame has two samples, one for left, and one for right.
     FrameArray,
+
+    /// * For channel array, each element of the array is one channel of the audio.
+    /// * For example, if the audio is mono, the array only contains one element, that element is the only channel for the mono audio.
     ChannelArray,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct SamplesInfo {
+    /// * Number of samples per channel decoded from the FLAC frame
     pub samples: u32,
+
+    /// * Number of channels in the FLAC frame
     pub channels: u32,
+
+    /// * The sample rate of the FLAC frame.
     pub sample_rate: u32,
+
+    /// * How many bits in an `i32` are valid for a sample. The decoder only excretes `[i32]` for you.
+    /// * For example, the value is 16, but you got a `[i32]`, which means each `i32` is in the range of -32768 to 32767, you can then just cast the `i32` to `i16` for your convenience.
     pub bits_per_sample: u32,
+
+    /// * How are the audio data forms, audio frame array, or channel array.
     pub audio_form: FlacAudioForm,
 }
 
@@ -1375,26 +1646,60 @@ fn entry_to_string(entry: &FLAC__StreamMetadata_VorbisComment_Entry) -> String {
     entry_to_str(entry).to_string()
 }
 
+/// ## The decoder's core structure, but can't move after `initialize()` has been called.
+/// Use a `Box` to contain it, or just don't move it will be fine.
 pub struct FlacDecoderUnmovable<'a, ReadSeek>
 where
     ReadSeek: Read + Seek + Debug {
-    // https://xiph.org/flac/api/group__flac__stream__decoder.html
+    /// * See <https://xiph.org/flac/api/group__flac__stream__decoder.html>
     decoder: *mut FLAC__StreamDecoder,
+
+    /// * The reader to read the FLAC file
     reader: &'a mut ReadSeek,
+
+    /// * Your `on_read()` closure, read from the `reader` and return how many bytes you read, and what is the current read status.
     on_read: Box<dyn FnMut(&mut ReadSeek, &mut [u8]) -> (usize, FlacReadStatus) + 'a>,
+
+    /// * Your `on_seek()` closure, helps the decoder to set the file pointer.
     on_seek: Box<dyn FnMut(&mut ReadSeek, u64) -> Result<(), io::Error> + 'a>,
+
+    /// * Your `on_tell()` closure, returns the current read position.
     on_tell: Box<dyn FnMut(&mut ReadSeek) -> Result<u64, io::Error> + 'a>,
+
+    /// * Your `on_length()` closure. You only need to return the file length through this closure.
     on_length: Box<dyn FnMut(&mut ReadSeek) -> Result<u64, io::Error> + 'a>,
+
+    /// * Your `on_eof()` closure, if the `reader` hits the end of the file, the closure returns true. Otherwise returns false indicates that there's still data to be read by the decoder.
     on_eof: Box<dyn FnMut(&mut ReadSeek) -> bool + 'a>,
+
+    /// * Your `on_write()` closure, it's not for you to "write", but it's the decoder returns the decoded samples for you to use.
     on_write: Box<dyn FnMut(&[Vec<i32>], &SamplesInfo) -> Result<(), io::Error> + 'a>,
+
+    /// * Your `on_error()` closure. Normally it won't be called.
     on_error: Box<dyn FnMut(FlacInternalDecoderError) + 'a>,
+
+    /// * Set to true to let the decoder check the MD5 sum of the decoded samples.
     md5_checking: bool,
+
+    /// * Is this decoder finished decoding?
     finished: bool,
+
+    /// * Scale to `i32` range or not, if set to true, the sample will be scaled to the whole range of `i32` [-2147483648, +2147483647] if bits per sample is not 32.
     pub scale_to_i32_range: bool,
+
+    /// * The desired form of audio you want to receive.
     pub desired_audio_form: FlacAudioForm,
+
+    /// * The vendor string read from the FLAC file.
     pub vendor_string: Option<String>,
+
+    /// * The comments, or metadata read from the FLAC file.
     pub comments: BTreeMap<String, String>,
+
+    /// * The pictures, or CD cover read from the FLAC file.
     pub pictures: Vec<PictureData>,
+
+    /// * The cue sheets read from the FLAC file.
     pub cue_sheets: Vec<FlacCueSheet>,
 }
 
@@ -1717,6 +2022,7 @@ where
         });
     }
 
+    /// * The `initialize()` function. Sets up all of the callback functions, sets `client_data` to the address of the `self` struct.
     pub fn initialize(&mut self) -> Result<(), FlacDecoderError> {
         unsafe {
             if FLAC__stream_decoder_set_md5_checking(self.decoder, self.md5_checking as i32) == 0 {
@@ -1749,6 +2055,7 @@ where
         self.get_status_as_result("FlacDecoderUnmovable::Init()")
     }
 
+    /// * Seek to the specific sample position, may fail.
     pub fn seek(&mut self, frame_index: u64) -> Result<(), FlacDecoderError> {
         for _retry in 0..3 {
             unsafe {
@@ -1772,30 +2079,43 @@ where
         Err(FlacDecoderError::new(FLAC__STREAM_DECODER_SEEK_ERROR, "FLAC__stream_decoder_seek_absolute"))
     }
 
+    /// * Calls your `on_tell()` closure to get the read position
     pub fn tell(&mut self) -> Result<u64, io::Error> {
         (self.on_tell)(self.reader)
     }
 
+    /// * Calls your `on_length()` closure to get the length of the file
     pub fn length(&mut self) -> Result<u64, io::Error> {
         (self.on_length)(self.reader)
     }
 
+    /// * Calls your `on_eof()` closure to check if `reader` hits the end of the file.
     pub fn eof(&mut self) -> bool {
         (self.on_eof)(self.reader)
     }
 
+    /// * Get the vendor string.
+    pub fn get_vendor_string(&self) -> &Option<String> {
+        &self.vendor_string
+    }
+
+    /// * Get all of the comments or metadata.
     pub fn get_comments(&self) -> &BTreeMap<String, String> {
         &self.comments
     }
 
+    /// * Get all of the pictures
     pub fn get_pictures(&self) -> &Vec<PictureData> {
         &self.pictures
     }
 
+    /// * Get all of the cue sheets
     pub fn get_cue_sheets(&self) -> &Vec<FlacCueSheet> {
         &self.cue_sheets
     }
 
+    /// * Decode one FLAC frame, may get an audio frame or a metadata frame.
+    /// * Your closures will be called by the decoder when you call this method.
     pub fn decode(&mut self) -> Result<bool, FlacDecoderError> {
         if unsafe {FLAC__stream_decoder_process_single(self.decoder) != 0} {
             Ok(true)
@@ -1807,6 +2127,7 @@ where
         }
     }
 
+    /// * Decode all of the FLAC frames, get all of the samples and metadata and pictures and cue sheets, etc.
     pub fn decode_all(&mut self) -> Result<bool, FlacDecoderError> {
         if unsafe {FLAC__stream_decoder_process_until_end_of_stream(self.decoder) != 0} {
             Ok(true)
@@ -1818,6 +2139,7 @@ where
         }
     }
 
+    /// * Finish decoding the FLAC file, the remaining samples will be returned to you via your `on_write()` closure.
     pub fn finish(&mut self) -> Result<(), FlacDecoderError> {
         if !self.finished {
             if unsafe {FLAC__stream_decoder_finish(self.decoder) != 0} {
@@ -1842,6 +2164,7 @@ where
         };
     }
 
+    /// * Call this function if you don't want the decoder anymore.
     pub fn finalize(self) {}
 }
 
@@ -1879,6 +2202,8 @@ where
     }
 }
 
+/// ## A wrapper for `FlacDecoderUnmovable`, which provides a Box to make `FlacDecoderUnmovable` never move.
+/// This is the struct that should be mainly used by you.
 pub struct FlacDecoder<'a, ReadSeek>
 where
     ReadSeek: Read + Seek + Debug {
@@ -1920,46 +2245,58 @@ where
         Ok(ret)
     }
 
+    /// * Seek to the specific sample position, may fail.
     pub fn seek(&mut self, frame_index: u64) -> Result<(), FlacDecoderError> {
         self.decoder.seek(frame_index)
     }
 
+    /// * Calls your `on_tell()` closure to get the read position
     pub fn tell(&mut self) -> Result<u64, io::Error> {
         self.decoder.tell()
     }
 
+    /// * Calls your `on_length()` closure to get the length of the file
     pub fn length(&mut self) -> Result<u64, io::Error> {
         self.decoder.length()
     }
 
+    /// * Calls your `on_eof()` closure to check if `reader` hits the end of the file.
     pub fn eof(&mut self) -> bool {
         self.decoder.eof()
     }
 
+    /// * Get the vendor string.
     pub fn get_vendor_string(&self) -> &Option<String> {
         &self.decoder.vendor_string
     }
 
+    /// * Get all of the comments or metadata.
     pub fn get_comments(&self) -> &BTreeMap<String, String> {
         &self.decoder.comments
     }
 
+    /// * Get all of the pictures
     pub fn get_pictures(&self) -> &Vec<PictureData> {
         &self.decoder.pictures
     }
 
+    /// * Decode one FLAC frame, may get an audio frame or a metadata frame.
+    /// * Your closures will be called by the decoder when you call this method.
     pub fn decode(&mut self) -> Result<bool, FlacDecoderError> {
         self.decoder.decode()
     }
 
+    /// * Decode all of the FLAC frames, get all of the samples and metadata and pictures and cue sheets, etc.
     pub fn decode_all(&mut self) -> Result<bool, FlacDecoderError> {
         self.decoder.decode_all()
     }
 
+    /// * Finish decoding the FLAC file, the remaining samples will be returned to you via your `on_write()` closure.
     pub fn finish(&mut self) -> Result<(), FlacDecoderError> {
         self.decoder.finish()
     }
 
+    /// * Call this function if you don't want the decoder anymore.
     pub fn finalize(self) {}
 }
 
