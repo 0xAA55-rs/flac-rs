@@ -374,11 +374,11 @@ struct FlacMetadata {
 
 #[derive(Debug)]
 #[repr(C)]
-struct FlacCueTrack {
+struct FlacCueTrackWrap {
     track: *mut FLAC__StreamMetadata_CueSheet_Track,
 }
 
-impl FlacCueTrack {
+impl FlacCueTrackWrap {
     pub fn new() -> Result<Self, FlacEncoderError> {
         let ret = Self {
             track: unsafe {FLAC__metadata_object_cuesheet_track_new()},
@@ -403,7 +403,7 @@ impl FlacCueTrack {
     }
 }
 
-impl Default for FlacCueTrack {
+impl Default for FlacCueTrackWrap {
     fn default() -> Self {
         Self {
             track: ptr::null_mut(),
@@ -411,7 +411,7 @@ impl Default for FlacCueTrack {
     }
 }
 
-impl Drop for FlacCueTrack {
+impl Drop for FlacCueTrackWrap {
     fn drop(&mut self) {
         if !self.track.is_null() {
             unsafe {FLAC__metadata_object_cuesheet_track_delete(self.track)};
@@ -424,6 +424,109 @@ fn make_sz(s: &str) -> String {
     let mut s = s.to_owned();
     if !s.ends_with('\0') {s.push('\0');}
     s
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum FlacTrackType {
+    Audio,
+    NonAudio,
+}
+
+impl Display for FlacTrackType {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Self::Audio => write!(f, "audio"),
+            Self::NonAudio => write!(f, "non-audio"),
+        }
+    }
+}
+
+/// offset: Offset in samples, relative to the track offset, of the index point.
+/// number: The index point number
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct FlacCueSheetIndex {
+    pub offset: u64,
+    pub number: u8,
+}
+
+#[derive(Clone)]
+#[repr(C)]
+pub struct FlacCueTrack {
+    pub offset: u64, // in samples
+    pub track_no: u8,
+    pub isrc: [i8; 13],
+    pub type_: FlacTrackType,
+    pub pre_emphasis: bool,
+    pub indices: Vec<FlacCueSheetIndex>,
+}
+
+impl FlacCueTrack {
+    pub fn get_isrc(&self) -> String {
+        String::from_utf8_lossy(&self.isrc.iter().map(|c|{*c as u8}).collect::<Vec<u8>>()).to_string()
+    }
+}
+
+impl Debug for FlacCueTrack {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("FlacCueTrack")
+            .field("offset", &self.offset)
+            .field("track_no", &self.track_no)
+            .field("isrc", &self.get_isrc())
+            .field("type_", &self.type_)
+            .field("pre_emphasis", &self.pre_emphasis)
+            .field("indices", &self.indices)
+            .finish()
+    }
+}
+
+impl Display for FlacCueTrack {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("FlacCueTrack")
+            .field("offset", &self.offset)
+            .field("track_no", &self.track_no)
+            .field("isrc", &self.get_isrc())
+            .field("type_", &self.type_)
+            .field("pre_emphasis", &self.pre_emphasis)
+            .field("indices", &self.indices)
+            .finish()
+    }
+}
+
+#[derive(Clone)]
+pub struct FlacCueSheet {
+    pub media_catalog_number: [i8; 129],
+    pub lead_in: u64,
+    pub is_cd: bool,
+    pub tracks: BTreeMap<u8, FlacCueTrack>,
+}
+
+impl FlacCueSheet {
+    pub fn get_media_catalog_number(&self) -> String {
+        String::from_utf8_lossy(&self.media_catalog_number.iter().map(|c|{*c as u8}).collect::<Vec<u8>>()).to_string()
+    }
+}
+
+impl Debug for FlacCueSheet {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("FlacCueSheet")
+            .field("media_catalog_number", &self.get_media_catalog_number())
+            .field("lead_in", &self.lead_in)
+            .field("is_cd", &self.is_cd)
+            .field("tracks", &self.tracks)
+            .finish()
+    }
+}
+
+impl Display for FlacCueSheet {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("FlacCueSheet")
+            .field("media_catalog_number", &self.get_media_catalog_number())
+            .field("lead_in", &self.lead_in)
+            .field("is_cd", &self.is_cd)
+            .field("tracks", &self.tracks)
+            .finish()
+    }
 }
 
 impl FlacMetadata {
@@ -482,11 +585,30 @@ impl FlacMetadata {
         Ok(())
     }
 
+    pub fn insert_cue_track(&mut self, track_no: u8, cue_track: &FlacCueTrack) -> Result<(), FlacEncoderError> {
         unsafe {
+            let mut track = FlacCueTrackWrap::new()?;
             let track_data = track.get_ref_mut();
             track_data.offset = cue_track.offset;
             track_data.number = track_no;
             track_data.isrc = cue_track.isrc;
+            track_data.set_type(match cue_track.type_ {
+                FlacTrackType::Audio => 0,
+                FlacTrackType::NonAudio => 1,
+            });
+            track_data.set_pre_emphasis(match cue_track.pre_emphasis {
+                true => 1,
+                false => 0,
+            });
+            track_data.num_indices = cue_track.indices.len() as u8;
+            let mut indices: Vec<FLAC__StreamMetadata_CueSheet_Index> = cue_track.indices.iter().map(|index| -> FLAC__StreamMetadata_CueSheet_Index {
+                FLAC__StreamMetadata_CueSheet_Index {
+                    offset: index.offset,
+                    number: index.number,
+                }
+            }).collect();
+            track_data.indices = indices.as_mut_ptr();
+            if FLAC__metadata_object_cuesheet_set_track(self.metadata, track_no as u32, track.get_mut_ptr(), 1) == 0 {
                 eprintln!("Failed to create new cuesheet track for {track_no} {cue_track}:  {:?}", FlacEncoderError::new(FLAC__STREAM_ENCODER_MEMORY_ALLOCATION_ERROR, "FLAC__metadata_object_cuesheet_set_track"));
             }
         }
@@ -540,6 +662,7 @@ where
     on_seek: Box<dyn FnMut(&mut WriteSeek, u64) -> Result<(), io::Error> + 'a>,
     on_tell: Box<dyn FnMut(&mut WriteSeek) -> Result<u64, io::Error> + 'a>,
     comments: BTreeMap<&'static str, String>,
+    cue_sheets: Vec<FlacCueSheet>,
     pictures: Vec<PictureData>,
     finished: bool,
 }
@@ -564,6 +687,7 @@ where
             on_seek,
             on_tell,
             comments: BTreeMap::new(),
+            cue_sheets: Vec::new(),
             pictures: Vec::<PictureData>::new(),
             finished: false,
         };
@@ -607,9 +731,11 @@ where
         }
     }
 
+    pub fn insert_cue_sheet(&mut self, cue_sheet: &FlacCueSheet) -> Result<(), FlacEncoderInitError> {
         if self.encoder_initialized {
             Err(FlacEncoderInitError::new(FLAC__STREAM_ENCODER_INIT_STATUS_ALREADY_INITIALIZED, "FlacEncoderUnmovable::insert_cue_track"))
         } else {
+            self.cue_sheets.push(cue_sheet.clone());
             Ok(())
         }
     }
@@ -682,7 +808,9 @@ where
                     }
                     self.metadata.push(metadata);
                 }
+                for cue_sheet in self.cue_sheets.iter() {
                     let mut metadata = FlacMetadata::new_cue_sheet()?;
+                    for (track_no, cue_track) in cue_sheet.tracks.iter() {
                         metadata.insert_cue_track(*track_no, cue_track)?;
                     }
                     self.metadata.push(metadata);
@@ -916,6 +1044,7 @@ where
             .field("on_seek", &"{{closure}}")
             .field("on_tell", &"{{closure}}")
             .field("comments", &self.comments)
+            .field("cue_sheets", &self.cue_sheets)
             .field("picture", &format_args!("..."))
             .finish()
     }
@@ -954,6 +1083,8 @@ where
         self.encoder.insert_comments(key, value)
     }
 
+    pub fn insert_cue_sheet(&mut self, cue_sheet: &FlacCueSheet) -> Result<(), FlacEncoderInitError> {
+        self.encoder.insert_cue_sheet(cue_sheet)
     }
 
     pub fn add_picture(&mut self, picture_binary: &[u8], description: &str, mime_type: &str, width: u32, height: u32, depth: u32, colors: u32) -> Result<(), FlacEncoderInitError> {
@@ -1264,6 +1395,7 @@ where
     pub vendor_string: Option<String>,
     pub meta_comments: BTreeMap<String, String>,
     pub pictures: Vec<PictureData>,
+    pub cue_sheets: Vec<FlacCueSheet>,
 }
 
 impl<'a, ReadSeek> FlacDecoderUnmovable<'a, ReadSeek>
@@ -1299,6 +1431,7 @@ where
             vendor_string: None,
             meta_comments: BTreeMap::new(),
             pictures: Vec::<PictureData>::new(),
+            cue_sheets: Vec::<FlacCueSheet>::new(),
         };
         if ret.decoder.is_null() {
             Err(FlacDecoderError::new(FLAC__STREAM_DECODER_MEMORY_ALLOCATION_ERROR, "FLAC__stream_decoder_new"))
@@ -1537,6 +1670,34 @@ where
                     colors: picture.colors,
                 });
             },
+            FLAC__METADATA_TYPE_CUESHEET => unsafe {
+                let cue_sheet = metadata.data.cue_sheet;
+                this.cue_sheets.push(FlacCueSheet{
+                    media_catalog_number: cue_sheet.media_catalog_number,
+                    lead_in: cue_sheet.lead_in,
+                    is_cd: cue_sheet.is_cd != 0,
+                    tracks: (0..cue_sheet.num_tracks).map(|i| -> (u8, FlacCueTrack) {
+                        let track = *cue_sheet.tracks.add(i as usize);
+                        (track.number, FlacCueTrack {
+                            offset: track.offset,
+                            track_no: track.number,
+                            isrc: track.isrc,
+                            type_: match track.type_() {
+                                0 => FlacTrackType::Audio,
+                                _ => FlacTrackType::NonAudio,
+                            },
+                            pre_emphasis: track.pre_emphasis() != 0,
+                            indices: (0..track.num_indices).map(|i| -> FlacCueSheetIndex {
+                                let index = *track.indices.add(i as usize);
+                                FlacCueSheetIndex {
+                                    offset: index.offset,
+                                    number: index.number,
+                                }
+                            }).collect()
+                        })
+                    }).collect(),
+                });
+            },
             _ => {
                 #[cfg(debug_assertions)]
                 if SHOW_CALLBACKS {println!("On `metadata_callback()`: {:?}", WrappedStreamMetadata(metadata));}
@@ -1625,6 +1786,9 @@ where
 
     pub fn get_comments(&self) -> &BTreeMap<String, String> {
         &self.meta_comments
+
+    pub fn get_cue_sheets(&self) -> &Vec<FlacCueSheet> {
+        &self.cue_sheets
     }
 
     pub fn decode(&mut self) -> Result<bool, FlacDecoderError> {
