@@ -1305,7 +1305,7 @@ fn entry_to_string(entry: &FLAC__StreamMetadata_VorbisComment_Entry) -> String {
 
 pub struct FlacDecoderUnmovable<'a, ReadSeek>
 where
-    ReadSeek: Write + Seek + Debug {
+    ReadSeek: Read + Seek + Debug {
     // https://xiph.org/flac/api/group__flac__stream__decoder.html
     decoder: *mut FLAC__StreamDecoder,
     reader: &'a mut ReadSeek,
@@ -1327,7 +1327,7 @@ where
 
 impl<'a, ReadSeek> FlacDecoderUnmovable<'a, ReadSeek>
 where
-    ReadSeek: Write + Seek + Debug {
+    ReadSeek: Read + Seek + Debug {
     pub fn new(
         reader: &'a mut ReadSeek,
         on_read: Box<dyn FnMut(&mut ReadSeek, &mut [u8]) -> (usize, FlacReadStatus) + 'a>,
@@ -1737,7 +1737,7 @@ where
 
 impl<'a, ReadSeek> Debug for FlacDecoderUnmovable<'_, ReadSeek>
 where
-    ReadSeek: Write + Seek + Debug {
+    ReadSeek: Read + Seek + Debug {
     fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
         fmt.debug_struct("FlacDecoderUnmovable")
             .field("decoder", &self.decoder)
@@ -1756,7 +1756,7 @@ where
 
 impl<'a, ReadSeek> Drop for FlacDecoderUnmovable<'_, ReadSeek>
 where
-    ReadSeek: Write + Seek + Debug {
+    ReadSeek: Read + Seek + Debug {
     fn drop(&mut self) {
         self.on_drop();
     }
@@ -1764,13 +1764,13 @@ where
 
 pub struct FlacDecoder<'a, ReadSeek>
 where
-    ReadSeek: Write + Seek + Debug {
+    ReadSeek: Read + Seek + Debug {
     decoder: Box<FlacDecoderUnmovable<'a, ReadSeek>>,
 }
 
 impl<'a, ReadSeek> FlacDecoder<'a, ReadSeek>
 where
-    ReadSeek: Write + Seek + Debug {
+    ReadSeek: Read + Seek + Debug {
     pub fn new(
         reader: &'a mut ReadSeek,
         on_read: Box<dyn FnMut(&mut ReadSeek, &mut [u8]) -> (usize, FlacReadStatus) + 'a>,
@@ -1848,7 +1848,7 @@ where
 
 impl<'a, ReadSeek> Debug for FlacDecoder<'_, ReadSeek>
 where
-    ReadSeek: Write + Seek + Debug {
+    ReadSeek: Read + Seek + Debug {
     fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
         fmt.debug_struct("FlacDecoder")
             .field("decoder", &self.decoder)
