@@ -1393,7 +1393,7 @@ where
     pub scale_to_i32_range: bool,
     pub desired_audio_form: FlacAudioForm,
     pub vendor_string: Option<String>,
-    pub meta_comments: BTreeMap<String, String>,
+    pub comments: BTreeMap<String, String>,
     pub pictures: Vec<PictureData>,
     pub cue_sheets: Vec<FlacCueSheet>,
 }
@@ -1429,7 +1429,7 @@ where
             scale_to_i32_range,
             desired_audio_form,
             vendor_string: None,
-            meta_comments: BTreeMap::new(),
+            comments: BTreeMap::new(),
             pictures: Vec::<PictureData>::new(),
             cue_sheets: Vec::<FlacCueSheet>::new(),
         };
@@ -1640,7 +1640,7 @@ where
 
                         // Duplication check
                         let if_dup = format!("Duplicated comments: new comment is {key}: {val}, the previous is {key}: ");
-                        if let Some(old) = this.meta_comments.insert(key, val) {
+                        if let Some(old) = this.comments.insert(key, val) {
                             eprintln!("{if_dup}{old}");
                         }
                     } else {
@@ -1651,10 +1651,10 @@ where
 
                 // If it lacks the uppercase key pairs, we add it to the map.
                 for (key_upper, val) in uppercase_keypairs {
-                    if this.meta_comments.contains_key(&key_upper) {
+                    if this.comments.contains_key(&key_upper) {
                         continue;
                     } else {
-                        this.meta_comments.insert(key_upper, val);
+                        this.comments.insert(key_upper, val);
                     }
                 }
             },
@@ -1785,7 +1785,8 @@ where
     }
 
     pub fn get_comments(&self) -> &BTreeMap<String, String> {
-        &self.meta_comments
+        &self.comments
+    }
 
     pub fn get_cue_sheets(&self) -> &Vec<FlacCueSheet> {
         &self.cue_sheets
@@ -1929,7 +1930,7 @@ where
     }
 
     pub fn get_comments(&self) -> &BTreeMap<String, String> {
-        &self.decoder.meta_comments
+        &self.decoder.comments
     }
 
     pub fn get_pictures(&self) -> &Vec<PictureData> {
