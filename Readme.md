@@ -11,7 +11,9 @@ Each closure should be put into a box to pass it to the `new()` method of `FlacE
 After creating `FlacEncoder`, you can call `insert_comments()`, `insert_cue_track()`, and `add_picture()` to add metadata to the FLAC file.
 Then you should call `initialize()`, after this, you can write samples to let it encode for you.
 
-For `FlacDecoder`, if you want to retrieve the metadata, you have to decode the whole FLAC file, then 
+For `FlacDecoder`, if you want to retrieve the metadata, you have to decode the whole FLAC file, then the metadata is stored in the `FlacDecoder` and you have functions to read them.
+
+Just see the example code to see how to use this.
 
 ## Example code
 ```
