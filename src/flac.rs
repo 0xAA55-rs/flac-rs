@@ -280,47 +280,6 @@ impl From<FlacEncoderInitError> for FlacEncoderError {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct CueTrack {
-    offset: u64,
-    isrc: [i8; 13],
-    type_: u32,
-    pre_emphasis: u32,
-}
-
-impl CueTrack {
-    pub fn new(offset: u64, isrc: [i8; 13]) -> Self {
-        Self {
-            offset,
-            isrc,
-            type_: 0,
-            pre_emphasis: 0,
-        }
-    }
-}
-
-impl Debug for CueTrack {
-    fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
-        fmt.debug_struct("CueTrack")
-            .field("offset", &self.offset)
-            .field("isrc", &self.isrc)
-            .field("type", &self.type_)
-            .field("pre_emphasis", &self.pre_emphasis)
-            .finish()
-    }
-}
-
-impl Display for CueTrack {
-    fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
-        fmt.debug_struct("CueTrack")
-            .field("offset", &self.offset)
-            .field("isrc", &self.isrc)
-            .field("type", &self.type_)
-            .field("pre_emphasis", &self.pre_emphasis)
-            .finish()
-    }
-}
-
 pub const COMMENT_KEYS: [&str; 33] = [
     "ACTOR",
     "ALBUM",
@@ -523,18 +482,11 @@ impl FlacMetadata {
         Ok(())
     }
 
-    pub fn insert_cue_track(&mut self, track_no: u8, cue_track: &CueTrack) -> Result<(), FlacEncoderError> {
         unsafe {
-            let mut track = FlacCueTrack::new()?;
             let track_data = track.get_ref_mut();
             track_data.offset = cue_track.offset;
             track_data.number = track_no;
             track_data.isrc = cue_track.isrc;
-            track_data.set_type(cue_track.type_);
-            track_data.set_pre_emphasis(cue_track.pre_emphasis);
-            track_data.num_indices = 0;
-            track_data.indices = ptr::null_mut();
-            if FLAC__metadata_object_cuesheet_set_track(self.metadata, track_no as u32, track.get_mut_ptr(), 0) == 0 {
                 eprintln!("Failed to create new cuesheet track for {track_no} {cue_track}:  {:?}", FlacEncoderError::new(FLAC__STREAM_ENCODER_MEMORY_ALLOCATION_ERROR, "FLAC__metadata_object_cuesheet_set_track"));
             }
         }
@@ -588,7 +540,6 @@ where
     on_seek: Box<dyn FnMut(&mut WriteSeek, u64) -> Result<(), io::Error> + 'a>,
     on_tell: Box<dyn FnMut(&mut WriteSeek) -> Result<u64, io::Error> + 'a>,
     comments: BTreeMap<&'static str, String>,
-    cue_sheet: BTreeMap<u8, CueTrack>,
     pictures: Vec<PictureData>,
     finished: bool,
 }
@@ -613,7 +564,6 @@ where
             on_seek,
             on_tell,
             comments: BTreeMap::new(),
-            cue_sheet: BTreeMap::new(),
             pictures: Vec::<PictureData>::new(),
             finished: false,
         };
@@ -657,13 +607,9 @@ where
         }
     }
 
-    pub fn insert_cue_track(&mut self, track_no: u8, cue_track: &CueTrack) -> Result<(), FlacEncoderInitError> {
         if self.encoder_initialized {
             Err(FlacEncoderInitError::new(FLAC__STREAM_ENCODER_INIT_STATUS_ALREADY_INITIALIZED, "FlacEncoderUnmovable::insert_cue_track"))
         } else {
-            if let Some(old_track) = self.cue_sheet.insert(track_no, *cue_track) {
-                eprintln!("Track index {old_track} is changed to {:?} from {:?}", cue_track, old_track);
-            }
             Ok(())
         }
     }
@@ -736,9 +682,7 @@ where
                     }
                     self.metadata.push(metadata);
                 }
-                if !self.cue_sheet.is_empty() {
                     let mut metadata = FlacMetadata::new_cue_sheet()?;
-                    for (track_no, cue_track) in self.cue_sheet.iter() {
                         metadata.insert_cue_track(*track_no, cue_track)?;
                     }
                     self.metadata.push(metadata);
@@ -972,7 +916,6 @@ where
             .field("on_seek", &"{{closure}}")
             .field("on_tell", &"{{closure}}")
             .field("comments", &self.comments)
-            .field("cue_sheet", &self.cue_sheet)
             .field("picture", &format_args!("..."))
             .finish()
     }
@@ -1011,8 +954,6 @@ where
         self.encoder.insert_comments(key, value)
     }
 
-    pub fn insert_cue_track(&mut self, track_no: u8, cue_track: &CueTrack) -> Result<(), FlacEncoderInitError> {
-        self.encoder.insert_cue_track(track_no, cue_track)
     }
 
     pub fn add_picture(&mut self, picture_binary: &[u8], description: &str, mime_type: &str, width: u32, height: u32, depth: u32, colors: u32) -> Result<(), FlacEncoderInitError> {
