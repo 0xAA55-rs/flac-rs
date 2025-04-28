@@ -688,7 +688,7 @@ where
             on_tell,
             comments: BTreeMap::new(),
             cue_sheets: Vec::new(),
-            pictures: Vec::<PictureData>::new(),
+            pictures: Vec::new(),
             finished: false,
         };
         if ret.encoder.is_null() {
@@ -1788,6 +1788,10 @@ where
         &self.comments
     }
 
+    pub fn get_pictures(&self) -> &Vec<PictureData> {
+        &self.pictures
+    }
+
     pub fn get_cue_sheets(&self) -> &Vec<FlacCueSheet> {
         &self.cue_sheets
     }
@@ -1856,6 +1860,13 @@ where
             .field("on_write", &"{{closure}}")
             .field("on_error", &"{{closure}}")
             .field("md5_checking", &self.md5_checking)
+            .field("finished", &self.finished)
+            .field("scale_to_i32_range", &self.scale_to_i32_range)
+            .field("desired_audio_form", &self.desired_audio_form)
+            .field("vendor_string", &self.vendor_string)
+            .field("comments", &self.comments)
+            .field("pictures", &self.pictures)
+            .field("cue_sheets", &self.cue_sheets)
             .finish()
     }
 }
