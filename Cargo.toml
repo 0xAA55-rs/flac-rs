@@ -1,6 +1,6 @@
 [package]
 name = "flac-rs"
-version = "0.0.3"
+version = "0.0.4"
 edition = "2024"
 authors = ["0xAA55 <838816058@qq.com>"]
 license-file = "LICENSE"
@@ -20,5 +20,5 @@ id3 = ["dep:id3"]
 lto = "fat"
 
 [lib]
-name = "flac_rs"
+name = "flac"
 path = "src/lib.rs"
