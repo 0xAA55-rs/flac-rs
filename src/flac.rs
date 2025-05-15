@@ -1274,81 +1274,6 @@ where
         })
     }
 
-    /// * Insert a metadata key-value pair before calling to `initialize()`
-    pub fn insert_comments(&mut self, key: &'static str, value: &str) -> Result<(), FlacEncoderInitError> {
-        self.encoder.insert_comments(key, value)
-    }
-
-    /// * Insert a cue sheet before calling to `initialize()`
-    pub fn insert_cue_sheet(&mut self, cue_sheet: &FlacCueSheet) -> Result<(), FlacEncoderInitError> {
-        self.encoder.insert_cue_sheet(cue_sheet)
-    }
-
-    /// * Add a picture before calling to `initialize()`
-    pub fn add_picture(&mut self, picture_binary: &[u8], description: &str, mime_type: &str, width: u32, height: u32, depth: u32, colors: u32) -> Result<(), FlacEncoderInitError> {
-        self.encoder.add_picture(picture_binary, description, mime_type, width, height, depth, colors)
-    }
-
-    #[cfg(feature = "id3")]
-    pub fn inherit_metadata_from_id3(&mut self, tag: &id3::Tag) -> Result<(), FlacEncoderInitError> {
-        self.encoder.inherit_metadata_from_id3(tag)
-    }
-
-    /// * Retrieve the params from the encoder where you provided it for the creation of the encoder.
-    pub fn get_params(&self) -> FlacEncoderParams {
-        self.encoder.get_params()
-    }
-
-    /// * Calls your `on_tell()` closure to get the current writing position.
-    pub fn tell(&mut self) -> Result<u64, io::Error> {
-        self.encoder.tell()
-    }
-
-    /// * The `initialize()` function. Sets up all of the callback functions, transfers all of the metadata to the encoder.
-    pub fn initialize(&mut self) -> Result<(), FlacEncoderInitError> {
-        if !self.encoder.encoder_initialized {
-            self.encoder.initialize()?
-        }
-        Ok(())
-    }
-
-    /// * Encode the interleaved samples (interleaved by channels)
-    /// * See `FlacEncoderParams` for the information on how to provide your samples in the `[i32]` array.
-    pub fn write_interleaved_samples(&mut self, samples: &[i32]) -> Result<(), FlacEncoderError> {
-        self.encoder.write_interleaved_samples(samples)
-    }
-
-    /// * Encode mono audio. Regardless of the channel setting of the FLAC encoder, the sample will be duplicated to the number of channels to accomplish the encoding
-    /// * See `FlacEncoderParams` for the information on how to provide your samples in the `[i32]` array.
-    pub fn write_mono_channel(&mut self, monos: &[i32]) -> Result<(), FlacEncoderError> {
-        self.encoder.write_mono_channel(monos)
-    }
-
-    /// * Encode stereo audio, if the channels of the encoder are mono, the stereo samples will be turned to mono samples to encode.
-    /// * If the channels of the encoder are stereo, then the samples will be encoded as it is.
-    /// * If the encoder is multi-channel other than mono and stereo, an error is returned.
-    /// * See `FlacEncoderParams` for the information on how to provide your samples in the `i32` way.
-    pub fn write_stereos(&mut self, stereos: &[(i32, i32)]) -> Result<(), FlacEncoderError> {
-        self.encoder.write_stereos(stereos)
-    }
-
-    /// * Encode multiple mono channels into the multi-channel encoder.
-    /// * See `FlacEncoderParams` for the information on how to provide your samples in the `i32` way.
-    pub fn write_monos(&mut self, monos: &[Vec<i32>]) -> Result<(), FlacEncoderError> {
-        self.encoder.write_monos(monos)
-    }
-
-    /// * Encode samples by the audio frame array. Each audio frame contains one sample for every channel.
-    /// * See `FlacEncoderParams` for the information on how to provide your samples in the `i32` way.
-    pub fn write_frames(&mut self, frames: &[Vec<i32>]) -> Result<(), FlacEncoderError> {
-        self.encoder.write_frames(frames)
-    }
-
-    /// * After sending all of the samples to encode, must call `finish()` to complete encoding.
-    pub fn finish(&mut self) -> Result<(), FlacEncoderError> {
-        self.encoder.finish()
-    }
-
     /// * Call this function if you don't want the encoder anymore.
     pub fn finalize(self) {}
 }
@@ -1360,6 +1285,23 @@ where
         fmt.debug_struct("FlacEncoder")
             .field("encoder", &self.encoder)
             .finish()
+    }
+}
+
+impl<'a, WriteSeek> Deref for FlacEncoder<'a, WriteSeek>
+where
+    WriteSeek: Write + Seek + Debug {
+    type Target = FlacEncoderUnmovable<'a, WriteSeek>;
+    fn deref(&self) -> &FlacEncoderUnmovable<'a, WriteSeek> {
+        &self.encoder
+    }
+}
+
+impl<'a, WriteSeek> DerefMut for FlacEncoder<'a, WriteSeek>
+where
+    WriteSeek: Write + Seek + Debug {
+    fn deref_mut(&mut self) -> &mut FlacEncoderUnmovable<'a, WriteSeek> {
+        &mut self.encoder
     }
 }
 
@@ -2252,57 +2194,6 @@ where
         Ok(ret)
     }
 
-    /// * Seek to the specific sample position, may fail.
-    pub fn seek(&mut self, frame_index: u64) -> Result<(), FlacDecoderError> {
-        self.decoder.seek(frame_index)
-    }
-
-    /// * Calls your `on_tell()` closure to get the read position
-    pub fn tell(&mut self) -> Result<u64, io::Error> {
-        self.decoder.tell()
-    }
-
-    /// * Calls your `on_length()` closure to get the length of the file
-    pub fn length(&mut self) -> Result<u64, io::Error> {
-        self.decoder.length()
-    }
-
-    /// * Calls your `on_eof()` closure to check if `reader` hits the end of the file.
-    pub fn eof(&mut self) -> bool {
-        self.decoder.eof()
-    }
-
-    /// * Get the vendor string.
-    pub fn get_vendor_string(&self) -> &Option<String> {
-        &self.decoder.vendor_string
-    }
-
-    /// * Get all of the comments or metadata.
-    pub fn get_comments(&self) -> &BTreeMap<String, String> {
-        &self.decoder.comments
-    }
-
-    /// * Get all of the pictures
-    pub fn get_pictures(&self) -> &Vec<PictureData> {
-        &self.decoder.pictures
-    }
-
-    /// * Decode one FLAC frame, may get an audio frame or a metadata frame.
-    /// * Your closures will be called by the decoder when you call this method.
-    pub fn decode(&mut self) -> Result<bool, FlacDecoderError> {
-        self.decoder.decode()
-    }
-
-    /// * Decode all of the FLAC frames, get all of the samples and metadata and pictures and cue sheets, etc.
-    pub fn decode_all(&mut self) -> Result<bool, FlacDecoderError> {
-        self.decoder.decode_all()
-    }
-
-    /// * Finish decoding the FLAC file, the remaining samples will be returned to you via your `on_write()` closure.
-    pub fn finish(&mut self) -> Result<(), FlacDecoderError> {
-        self.decoder.finish()
-    }
-
     /// * Call this function if you don't want the decoder anymore.
     pub fn finalize(self) {}
 }
@@ -2314,6 +2205,23 @@ where
         fmt.debug_struct("FlacDecoder")
             .field("decoder", &self.decoder)
             .finish()
+    }
+}
+
+impl<'a, ReadSeek> Deref for FlacDecoder<'a, ReadSeek>
+where
+    ReadSeek: Read + Seek + Debug {
+    type Target = FlacDecoderUnmovable<'a, ReadSeek>;
+    fn deref(&self) -> &FlacDecoderUnmovable<'a, ReadSeek> {
+        &self.decoder
+    }
+}
+
+impl<'a, ReadSeek> DerefMut for FlacDecoder<'a, ReadSeek>
+where
+    ReadSeek: Read + Seek + Debug {
+    fn deref_mut(&mut self) -> &mut FlacDecoderUnmovable<'a, ReadSeek> {
+        &mut self.decoder
     }
 }
 
