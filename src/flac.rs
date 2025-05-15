@@ -1052,7 +1052,7 @@ where
             Ok(_) => FLAC__STREAM_ENCODER_SEEK_STATUS_OK,
             Err(e) => {
                 match e.kind() {
-                    ErrorKind::NotSeekable => FLAC__STREAM_ENCODER_SEEK_STATUS_UNSUPPORTED,
+                    io::ErrorKind::NotSeekable => FLAC__STREAM_ENCODER_SEEK_STATUS_UNSUPPORTED,
                     _ => FLAC__STREAM_ENCODER_SEEK_STATUS_ERROR,
                 }
             },
@@ -1070,7 +1070,7 @@ where
             },
             Err(e) => {
                 match e.kind() {
-                    ErrorKind::NotSeekable => FLAC__STREAM_ENCODER_TELL_STATUS_UNSUPPORTED,
+                    io::ErrorKind::NotSeekable => FLAC__STREAM_ENCODER_TELL_STATUS_UNSUPPORTED,
                     _ => FLAC__STREAM_ENCODER_TELL_STATUS_ERROR,
                 }
             },
@@ -1798,7 +1798,7 @@ where
             Ok(_) => FLAC__STREAM_DECODER_SEEK_STATUS_OK,
             Err(e) => {
                 match e.kind() {
-                    ErrorKind::NotSeekable => FLAC__STREAM_DECODER_SEEK_STATUS_UNSUPPORTED,
+                    io::ErrorKind::NotSeekable => FLAC__STREAM_DECODER_SEEK_STATUS_UNSUPPORTED,
                     _ => FLAC__STREAM_DECODER_SEEK_STATUS_ERROR,
                 }
             },
@@ -1814,7 +1814,7 @@ where
             },
             Err(e) => {
                 match e.kind() {
-                    ErrorKind::NotSeekable => FLAC__STREAM_DECODER_TELL_STATUS_UNSUPPORTED,
+                    io::ErrorKind::NotSeekable => FLAC__STREAM_DECODER_TELL_STATUS_UNSUPPORTED,
                     _ => FLAC__STREAM_DECODER_TELL_STATUS_ERROR,
                 }
             },
@@ -1830,7 +1830,7 @@ where
             },
             Err(e) => {
                 match e.kind() {
-                    ErrorKind::NotSeekable => FLAC__STREAM_DECODER_LENGTH_STATUS_UNSUPPORTED,
+                    io::ErrorKind::NotSeekable => FLAC__STREAM_DECODER_LENGTH_STATUS_UNSUPPORTED,
                     _ => FLAC__STREAM_DECODER_LENGTH_STATUS_ERROR,
                 }
             },
