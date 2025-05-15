@@ -7,9 +7,17 @@
 
 const SHOW_CALLBACKS: bool = false;
 
-use std::{any::Any, io::{Read, Write, Seek}};
-
-use std::io::SeekFrom;
+use std::{
+    any::Any,
+    borrow::Cow,
+    ffi::{CStr, c_void},
+    fmt::{self, Debug, Display, Formatter},
+    io::{self, Read, Write, Seek, SeekFrom},
+    ops::{Deref, DerefMut},
+    collections::BTreeMap,
+    ptr,
+    slice,
+};
 
 /// ## The compression level of the FLAC file
 /// A higher number means less file size. Default compression level is 5
@@ -71,8 +79,6 @@ impl Default for FlacEncoderParams {
         Self::new()
     }
 }
-
-use std::{borrow::Cow, io::{self, ErrorKind}, fmt::{self, Debug, Display, Formatter}, slice, ffi::{CStr, c_void}, ptr, collections::BTreeMap};
 
 #[cfg(feature = "id3")]
 use id3::{self, TagLike};
