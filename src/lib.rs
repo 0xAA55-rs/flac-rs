@@ -1,18 +1,32 @@
 #![allow(unused_imports)]
-pub mod flac;
+mod flac;
 
-use flac::*;
+/// * The flac encoder. The `FlacEncoder` is a wrapper for the `FlacEncoderUnmovable` what prevents the structure moves.
+pub use crate::flac::{FlacEncoderUnmovable, FlacEncoder};
 
-pub use flac::{FlacCompression, FlacEncoderParams};
-pub use flac::{FlacAudioForm, SamplesInfo};
-pub use flac::{FlacReadStatus, FlacInternalDecoderError};
-pub use flac::FlacError;
-pub use flac::{FlacEncoderError, FlacDecoderError};
-pub use flac::{FlacEncoderErrorCode, FlacDecoderErrorCode};
-pub use flac::{FlacEncoderInitError, FlacDecoderInitError};
-pub use flac::{FlacEncoderInitErrorCode, FlacDecoderInitErrorCode};
-pub use flac::{FlacEncoderUnmovable, FlacEncoder};
-pub use flac::{FlacDecoderUnmovable, FlacDecoder};
+/// * The flac decoder. The `FlacDecoder` is a wrapper for the `FlacDecoderUnmovable` what prevents the structure moves.
+pub use crate::flac::{FlacDecoderUnmovable, FlacDecoder};
+
+/// * The codec options for FLAC
+pub mod options {
+    pub use crate::flac::{FlacAudioForm, SamplesInfo};
+    pub use crate::flac::{FlacCompression, FlacEncoderParams};
+}
+
+/// * The objects for you to implement your closure, some is closures' params, some is the return value that your closure should return.
+pub mod closure_objects {
+    pub use crate::flac::SamplesInfo;
+    pub use crate::flac::{FlacReadStatus, FlacInternalDecoderError};
+}
+
+/// The errors of this library
+pub mod errors {
+    pub use crate::flac::FlacError;
+    pub use crate::flac::{FlacEncoderError, FlacDecoderError};
+    pub use crate::flac::{FlacEncoderErrorCode, FlacDecoderErrorCode};
+    pub use crate::flac::{FlacEncoderInitError, FlacDecoderInitError};
+    pub use crate::flac::{FlacEncoderInitErrorCode, FlacDecoderInitErrorCode};
+}
 
 #[test]
 fn test() {
