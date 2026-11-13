@@ -15,6 +15,7 @@ use std::{
     io::{self, Read, Write, Seek, SeekFrom},
     ops::{Deref, DerefMut},
     collections::BTreeMap,
+    os::raw::c_char,
     ptr,
     slice,
 };
@@ -580,7 +581,7 @@ pub struct FlacCueTrack {
     pub track_no: u8,
 
     /// * ISRC
-    pub isrc: [i8; 13],
+    pub isrc: [c_char; 13],
 
     /// * What type is this track, is it audio or not.
     pub type_: FlacTrackType,
@@ -628,7 +629,7 @@ impl Display for FlacCueTrack {
 #[derive(Clone)]
 pub struct FlacCueSheet {
     /// * media_catalog_number
-    pub media_catalog_number: [i8; 129],
+    pub media_catalog_number: [c_char; 129],
 
     /// * In samples
     pub lead_in: u64,
@@ -712,8 +713,8 @@ impl FlacMetadata {
             let mut entry = FLAC__StreamMetadata_VorbisComment_Entry{length: 0, entry: ptr::null_mut()};
             if FLAC__metadata_object_vorbiscomment_entry_from_name_value_pair (
                 &mut entry as *mut FLAC__StreamMetadata_VorbisComment_Entry,
-                szkey.as_ptr() as *mut i8,
-                szvalue.as_ptr() as *mut i8
+                szkey.as_ptr() as *mut c_char,
+                szvalue.as_ptr() as *mut c_char
             ) == 0 {
                 eprintln!("On set comment {key}: {value}: {:?}", FlacEncoderError::new(FLAC__STREAM_ENCODER_MEMORY_ALLOCATION_ERROR, "FLAC__metadata_object_vorbiscomment_entry_from_name_value_pair"));
             }
@@ -760,7 +761,7 @@ impl FlacMetadata {
         unsafe {
             if FLAC__metadata_object_picture_set_data(self.metadata, picture_binary.as_mut_ptr(), picture_binary.len() as u32, 0) == 0 {
                 Err(FlacEncoderError::new(FLAC__STREAM_ENCODER_MEMORY_ALLOCATION_ERROR, "FLAC__metadata_object_picture_set_data"))
-            } else if FLAC__metadata_object_picture_set_mime_type(self.metadata, desc_sz.as_mut_ptr() as *mut i8, 0) == 0 {
+            } else if FLAC__metadata_object_picture_set_mime_type(self.metadata, desc_sz.as_mut_ptr() as *mut c_char, 0) == 0 {
                 Err(FlacEncoderError::new(FLAC__STREAM_ENCODER_MEMORY_ALLOCATION_ERROR, "FLAC__metadata_object_picture_set_mime_type"))
             } else if FLAC__metadata_object_picture_set_description(self.metadata, mime_sz.as_mut_ptr(), 0) == 0 {
                 Err(FlacEncoderError::new(FLAC__STREAM_ENCODER_MEMORY_ALLOCATION_ERROR, "FLAC__metadata_object_picture_set_description"))
@@ -1916,7 +1917,7 @@ where
                 let picture = metadata.data.picture;
                 this.pictures.push(PictureData{
                     picture: slice::from_raw_parts(picture.data, picture.data_length as usize).to_vec(),
-                    description: CStr::from_ptr(picture.description as *const i8).to_string_lossy().to_string(),
+                    description: CStr::from_ptr(picture.description as *const c_char).to_string_lossy().to_string(),
                     mime_type: CStr::from_ptr(picture.mime_type).to_string_lossy().to_string(),
                     width: picture.width,
                     height: picture.height,
@@ -2385,7 +2386,7 @@ impl Debug for WrappedPicture {
         fmt.debug_struct("FLAC__StreamMetadata_Picture")
             .field("type_", &picture_type_to_str(self.0.type_))
             .field("mime_type", &unsafe{CStr::from_ptr(self.0.mime_type).to_str()})
-            .field("description", &unsafe{CStr::from_ptr(self.0.description as *const i8).to_str()})
+            .field("description", &unsafe{CStr::from_ptr(self.0.description as *const c_char).to_str()})
             .field("width", &self.0.width)
             .field("height", &self.0.height)
             .field("depth", &self.0.depth)
